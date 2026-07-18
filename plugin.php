@@ -32,8 +32,8 @@ function dsb_scan_directory_for_options($dir, $ignored_keys) {
             $content = @file_get_contents($file->getPathname());
             if ($content === false) continue;
 
-            // Regex match yourls_get_option and yourls_update_option calls
-            if (preg_match_all('/(?:yourls_get_option|yourls_update_option)\s*\(\s*[\'"]([a-zA-Z0-9_-]+)[\'"]/i', $content, $matches)) {
+            // Regex match option functions and wrappers
+            if (preg_match_all('/(?:yourls_get_option|yourls_update_option|ps_env_or_option|env_or_option|yourls_get_db_option|yourls_update_db_option|get_option|update_option)\s*\(\s*[\'"]([a-zA-Z0-9_-]+)[\'"]/i', $content, $matches)) {
                 if (isset($matches[1])) {
                     foreach ($matches[1] as $key) {
                         if (!in_array($key, $ignored_keys)) {
