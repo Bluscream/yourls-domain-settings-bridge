@@ -9,104 +9,126 @@ Author: Antigravity.AI
 
 if ( !defined( 'YOURLS_ABSPATH' ) ) die();
 
-// Array of options grouped by plugin/theme area dynamically parsed from the database
+// Clear options cache when a plugin state changes
+yourls_add_action('activated_plugin', 'dsb_clear_options_cache');
+yourls_add_action('deactivated_plugin', 'dsb_clear_options_cache');
+function dsb_clear_options_cache() {
+    yourls_delete_option('dsb_cached_grouped_keys');
+}
+
+// Helper to recursively scan a folder for PHP files containing yourls_get_option/yourls_update_option calls
+function dsb_scan_directory_for_options($dir, $ignored_keys) {
+    $option_keys = [];
+    if (!is_dir($dir)) {
+        return $option_keys;
+    }
+
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS)
+    );
+
+    foreach ($files as $file) {
+        if ($file->getExtension() === 'php') {
+            $content = @file_get_contents($file->getPathname());
+            if ($content === false) continue;
+
+            // Regex match yourls_get_option and yourls_update_option calls
+            if (preg_match_all('/(?:yourls_get_option|yourls_update_option)\s*\(\s*[\'"]([a-zA-Z0-9_-]+)[\'"]/i', $content, $matches)) {
+                if (isset($matches[1])) {
+                    foreach ($matches[1] as $key) {
+                        if (!in_array($key, $ignored_keys)) {
+                            $option_keys[] = $key;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return array_unique($option_keys);
+}
+
+// Array of options grouped by plugin/theme area dynamically parsed from the database and active plugins
 function dsb_get_grouped_keys() {
-    $db = yourls_get_db();
-    $table = YOURLS_DB_TABLE_OPTIONS;
-    
-    // Core system keys to ignore
+    // Try to get cached mapping first to keep admin dashboard fast
+    $cached = yourls_get_option('dsb_cached_grouped_keys');
+    if (is_array($cached) && !empty($cached)) {
+        return $cached;
+    }
+
+    $groups = [];
     $ignored_keys = [
         'active_plugins', 'core_version', 'db_version', 'site_name', 'site_url', 
         'stats_clicks', 'stats_shorturls', 'next_id', 'plugins_site_url', 
         'registered_plugins', 'dsb_domain_profiles', 'ps_domain_settings',
-        'nonce_key', 'cookie_key'
+        'nonce_key', 'cookie_key', 'dsb_cached_grouped_keys'
     ];
 
-    // Read all option names from DB
+    // 1. Scan active plugins
+    $active_plugins = yourls_get_option('active_plugins');
+    if (is_array($active_plugins)) {
+        foreach ($active_plugins as $plugin_rel_path) {
+            $plugin_file = YOURLS_PLUGINDIR . '/' . $plugin_rel_path;
+            if (!file_exists($plugin_file)) {
+                continue;
+            }
+
+            // Get Plugin Name from header
+            $plugin_name = basename(dirname($plugin_rel_path));
+            $content = @file_get_contents($plugin_file);
+            if ($content && preg_match('/Plugin Name:\s*(.*)$/mi', $content, $matches)) {
+                $plugin_name = trim($matches[1]);
+            }
+
+            // Ignore our own plugin to avoid recursive settings management
+            if ($plugin_name === 'Domain Settings Bridge') {
+                continue;
+            }
+
+            $plugin_dir = dirname($plugin_file);
+            $option_keys = dsb_scan_directory_for_options($plugin_dir, $ignored_keys);
+
+            if (!empty($option_keys)) {
+                $groups[$plugin_name] = [];
+                foreach ($option_keys as $key) {
+                    // Turn "cf_ts_site_key" into "Cf Ts Site Key"
+                    $label = ucwords(str_replace('_', ' ', str_replace(['cf_ts_', 'ps_', 'logo_suite_'], '', $key)));
+                    $groups[$plugin_name][$key] = $label;
+                }
+            }
+        }
+    }
+
+    // 2. Also query options table for any dangling options not mapped by active plugins
+    $db = yourls_get_db();
+    $table = YOURLS_DB_TABLE_OPTIONS;
     $db_options = [];
     try {
         $db_options = $db->fetchCol("SELECT option_name FROM `$table` ORDER BY option_name ASC");
     } catch (Exception $e) {}
 
-    // Predefined baseline options for our known plugins
-    $groups = [
-        'Cloudflare Turnstile' => [
-            'cf_ts_site_key'   => 'Turnstile Site Key',
-            'cf_ts_secret_key' => 'Turnstile Secret Key',
-        ],
-        'Public Shortener' => [
-            'ps_title'          => 'Page Title',
-            'ps_subtitle'       => 'Page Subtitle',
-            'ps_bg_start'       => 'Background Gradient Start',
-            'ps_bg_end'         => 'Background Gradient End',
-            'ps_text_primary'   => 'Primary Text Color',
-            'ps_text_secondary' => 'Secondary Text Color',
-            'ps_accent'         => 'Accent Color (Button)',
-            'ps_accent_hover'   => 'Accent Hover Color',
-        ],
-        'Google Safe Browsing' => [
-            'ozh_yourls_gsb' => 'Google Safe Browsing API Key',
-        ],
-        'YouTube Title Fix' => [
-            'youtube_title_fix_api_key' => 'YouTube Data API Key',
-        ],
-        'YOURLS Fallback URL' => [
-            'fallback_url' => 'Fallback URL',
-        ],
-        'Random ShortURLs' => [
-            'random_shorturls_length' => 'Random Keyword Length',
-        ],
-        'YOURLS LogoSuite' => [
-            'logo_suite_image_url'    => 'Branding Logo URL',
-            'logo_suite_image_alt'    => 'Branding Logo ALT',
-            'logo_suite_image_title'  => 'Branding Logo Title',
-            'logo_suite_custom_title' => 'Custom Admin Page Title',
-        ]
-    ];
-
-    // Flatten keys to track what we already mapped
     $mapped_keys = [];
     foreach ($groups as $g => $keys) {
-        foreach ($keys as $k => $l) {
-            $mapped_keys[] = $k;
-        }
+        $mapped_keys = array_merge($mapped_keys, array_keys($keys));
     }
 
-    // Categorize other options from DB dynamically
+    $dangling = [];
     foreach ($db_options as $option) {
         if (in_array($option, $ignored_keys) || in_array($option, $mapped_keys)) {
             continue;
         }
-
-        // Determine group by prefix
-        $group_name = 'Other Options';
-        if (strpos($option, 'cf_ts_') === 0) {
-            $group_name = 'Cloudflare Turnstile';
-        } elseif (strpos($option, 'ps_') === 0) {
-            $group_name = 'Public Shortener';
-        } elseif (strpos($option, 'ozh_') === 0) {
-            $group_name = 'Google Safe Browsing';
-        } elseif (strpos($option, 'youtube_') === 0) {
-            $group_name = 'YouTube Title Fix';
-        } elseif (strpos($option, 'fallback_') === 0) {
-            $group_name = 'YOURLS Fallback URL';
-        } elseif (strpos($option, 'random_') === 0) {
-            $group_name = 'Random ShortURLs';
-        } elseif (strpos($option, 'logo_suite') === 0) {
-            $group_name = 'YOURLS LogoSuite';
-        } elseif (strpos($option, 'webhook_') === 0) {
-            $group_name = 'Webhook Notifications';
-        } elseif (strpos($option, 'mlv_') === 0) {
-            $group_name = 'Modern Log Viewer';
-        }
-
-        // Create human readable label from prefix
-        $label = ucwords(str_replace('_', ' ', str_replace(['cf_ts_', 'ps_', 'logo_suite_'], '', $option)));
-        $groups[$group_name][$option] = $label;
+        $label = ucwords(str_replace('_', ' ', $option));
+        $dangling[$option] = $label;
     }
 
-    // Remove empty categories
-    return array_filter($groups);
+    if (!empty($dangling)) {
+        $groups['Other Options'] = $dangling;
+    }
+
+    // Cache the resolved groups
+    yourls_update_option('dsb_cached_grouped_keys', $groups);
+
+    return $groups;
 }
 
 // Flattened list of all supported option keys
