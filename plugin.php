@@ -44,17 +44,7 @@ function dsb_get_configurations() {
 
 // Dynamically intercept options on get_option using wildcard ArrayObject filter registry
 class DomainSettingsBridgeArray extends ArrayObject {
-    public function offsetExists($key): bool {
-        $exists = parent::offsetExists($key);
-        if (!$exists && strpos($key, 'shunt_option_') === 0) {
-            return true;
-        }
-        return $exists;
-    }
-
-    #[\ReturnTypeWillChange]
-    public function offsetGet($key) {
-        $val = parent::offsetExists($key) ? parent::offsetGet($key) : null;
+    private function get_override_val($key) {
         if (strpos($key, 'shunt_option_') === 0) {
             $option_name = substr($key, 13);
             $supported_keys = dsb_get_supported_keys();
@@ -65,30 +55,46 @@ class DomainSettingsBridgeArray extends ArrayObject {
                 
                 // 1. Resolve host specific setting
                 if (!empty($host) && isset($configs[$host][$option_name]) && $configs[$host][$option_name] !== '') {
-                    $resolved_val = $configs[$host][$option_name];
+                    return $configs[$host][$option_name];
                 }
                 // 2. Resolve default profile setting
                 elseif (isset($configs['default'][$option_name]) && $configs['default'][$option_name] !== '') {
-                    $resolved_val = $configs['default'][$option_name];
-                }
-                
-                if (isset($resolved_val)) {
-                    $bridge_filter = [
-                        10 => [
-                            'dsb_override' => [
-                                'function' => function($value) use ($resolved_val) {
-                                    return $resolved_val;
-                                },
-                                'accepted_args' => 1,
-                                'type' => 'filter'
-                            ]
-                        ]
-                    ];
-                    return is_array($val) ? $bridge_filter + $val : $bridge_filter;
+                    return $configs['default'][$option_name];
                 }
             }
         }
-        return $val;
+        return null;
+    }
+
+    public function offsetExists($key): bool {
+        $exists = parent::offsetExists($key);
+        if ($exists) {
+            return true;
+        }
+        return ($this->get_override_val($key) !== null);
+    }
+
+    #[\ReturnTypeWillChange]
+    public function offsetGet($key) {
+        $resolved_val = $this->get_override_val($key);
+        if ($resolved_val !== null) {
+            $bridge_filter = [
+                10 => [
+                    'dsb_override' => [
+                        'function' => function($value) use ($resolved_val) {
+                            return $resolved_val;
+                        },
+                        'accepted_args' => 1,
+                        'type' => 'filter'
+                    ]
+                ]
+            ];
+            
+            $val = parent::offsetExists($key) ? parent::offsetGet($key) : null;
+            return is_array($val) ? $bridge_filter + $val : $bridge_filter;
+        }
+        
+        return parent::offsetExists($key) ? parent::offsetGet($key) : null;
     }
 }
 
