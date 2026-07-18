@@ -174,7 +174,7 @@ function yas_init_option_overrides() {
 // Setup Admin UI
 yourls_add_action( 'plugins_loaded', 'yas_admin_init' );
 function yas_admin_init() {
-    yourls_register_plugin_page( 'advanced_settings', 'Domain Profiles', 'yas_admin_page' );
+    yourls_register_plugin_page( 'advanced_settings', 'Advanced Plugin Settings', 'yas_admin_page' );
 }
 
 function yas_admin_page() {
