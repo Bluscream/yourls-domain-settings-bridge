@@ -163,12 +163,29 @@ function yas_init_option_overrides() {
             }
             // 2. Resolve default profile setting
             elseif (isset($configs['default'][$option_name]) && $configs['default'][$option_name] !== '') {
-                return $configs[$host][$option_name];
+                return $configs['default'][$option_name];
             }
             
             return yourls_shunt_default();
         } );
     }
+
+    // Intercept base site URL
+    yourls_add_filter( 'get_yourls_site', function( $url ) {
+        $configs = yas_get_configurations();
+        $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+        
+        // 1. Host specific site URL override
+        if (!empty($host) && isset($configs[$host]['siteurl']) && $configs[$host]['siteurl'] !== '') {
+            return rtrim($configs[$host]['siteurl'], '/');
+        }
+        // 2. Default profile site URL override
+        elseif (isset($configs['default']['siteurl']) && $configs['default']['siteurl'] !== '') {
+            return rtrim($configs['default']['siteurl'], '/');
+        }
+        
+        return $url;
+    } );
 }
 
 // Setup Admin UI
