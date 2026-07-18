@@ -196,6 +196,10 @@ function yas_admin_page() {
                     // Update standard YOURLS options table directly
                     foreach ($supported_keys as $key => $label) {
                         $val = isset($_POST[$key]) ? trim($_POST[$key]) : '';
+                        // If it is a JSON array/object, decode it so YOURLS serializes it natively
+                        if (!empty($val) && ($val[0] === '{' || $val[0] === '[') && ($decoded = json_decode($val, true)) !== null) {
+                            $val = $decoded;
+                        }
                         yourls_update_option($key, $val);
                     }
                     // Clean up default key from config profile override if it exists
@@ -207,7 +211,11 @@ function yas_admin_page() {
                 } else {
                     $configs[$domain] = [];
                     foreach ($supported_keys as $key => $label) {
-                        $configs[$domain][$key] = isset($_POST[$key]) ? trim($_POST[$key]) : '';
+                        $val = isset($_POST[$key]) ? trim($_POST[$key]) : '';
+                        if (!empty($val) && ($val[0] === '{' || $val[0] === '[') && ($decoded = json_decode($val, true)) !== null) {
+                            $val = $decoded;
+                        }
+                        $configs[$domain][$key] = $val;
                     }
                     yourls_update_option('dsb_domain_profiles', $configs);
                     echo '<div class="updated"><p>Profile for <strong>' . htmlspecialchars($domain) . '</strong> saved successfully!</p></div>';
