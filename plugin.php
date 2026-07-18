@@ -19,7 +19,6 @@ function dsb_clear_options_cache() {
 // Helper to recursively scan a folder for PHP files containing yourls_get_option/yourls_update_option calls
 function dsb_scan_directory_for_options($dir, $ignored_keys) {
     $option_keys = [];
-    error_log("DSB debug: scanning dir: " . $dir . " - is_dir: " . (is_dir($dir) ? 'yes' : 'no'));
     if (!is_dir($dir)) {
         return $option_keys;
     }
@@ -30,7 +29,6 @@ function dsb_scan_directory_for_options($dir, $ignored_keys) {
 
     foreach ($files as $file) {
         if ($file->getExtension() === 'php') {
-            error_log("DSB debug: reading PHP file: " . $file->getPathname());
             $content = @file_get_contents($file->getPathname());
             if ($content === false) continue;
 
@@ -39,7 +37,6 @@ function dsb_scan_directory_for_options($dir, $ignored_keys) {
                 if (isset($matches[1])) {
                     foreach ($matches[1] as $key) {
                         if (!in_array($key, $ignored_keys)) {
-                            error_log("DSB debug: found option key match: " . $key);
                             $option_keys[] = $key;
                         }
                     }
@@ -64,11 +61,9 @@ function dsb_get_grouped_keys() {
 
     // 1. Scan active plugins
     $active_plugins = yourls_get_option('active_plugins');
-    error_log("DSB debug: active plugins count: " . (is_array($active_plugins) ? count($active_plugins) : 0));
     if (is_array($active_plugins)) {
         foreach ($active_plugins as $plugin_rel_path) {
             $plugin_file = YOURLS_PLUGINDIR . '/' . $plugin_rel_path;
-            error_log("DSB debug: scanning file: " . $plugin_file . " - exists: " . (file_exists($plugin_file) ? 'yes' : 'no'));
             if (!file_exists($plugin_file)) {
                 continue;
             }
@@ -187,7 +182,6 @@ function dsb_admin_page() {
     $table = YOURLS_DB_TABLE_OPTIONS;
     $configs = dsb_get_configurations();
     $grouped_keys = dsb_get_grouped_keys();
-    echo '<div class="notice notice-info"><p>Debug: Grouped Categories found: ' . implode(', ', array_keys($grouped_keys)) . '</p></div>';
     $supported_keys = dsb_get_supported_keys();
     $nonce = yourls_create_nonce('dsb_settings_nonce');
 
