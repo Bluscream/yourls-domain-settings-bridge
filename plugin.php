@@ -171,7 +171,8 @@ function yas_init_option_overrides() {
                 return $configs['default'][$option_name];
             }
             
-            return yourls_shunt_default();
+            // No override — let YOURLS fall through to its normal DB lookup
+            return false;
         } );
     }
 
