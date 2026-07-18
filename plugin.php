@@ -159,6 +159,8 @@ function dsb_admin_init() {
 }
 
 function dsb_admin_page() {
+    $db = yourls_get_db();
+    $table = YOURLS_DB_TABLE_OPTIONS;
     $configs = dsb_get_configurations();
     $grouped_keys = dsb_get_grouped_keys();
     $supported_keys = dsb_get_supported_keys();
